@@ -29,6 +29,7 @@ class ImageController extends Controller
      * Upload a new image.
      *
      * Only PNG and JPEG files are allowed. Maximum file size is 5MB.
+     * Each user can upload up to 100,000 images per day.
      */
     public function store(StoreImageRequest $request): JsonResponse
     {

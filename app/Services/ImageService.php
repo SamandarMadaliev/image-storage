@@ -13,31 +13,41 @@ use App\Repositories\ImageStorageRepository;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Str;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
+use Throwable;
 
 class ImageService
 {
     public function __construct(
         private ImageRepository $imageRepository,
         private ImageStorageRepository $storageRepository,
+        private UploadLimitService $uploadLimitService,
     ) {}
 
     public function store(UploadImageDto $dto): Image
     {
-        $extension = strtolower($dto->file->getClientOriginalExtension());
-        $filePath = $dto->userId.'/'.Str::uuid()->toString().'.'.$extension;
+        $this->uploadLimitService->reserveUploadSlot($dto->userId);
 
-        $this->storageRepository->store(
-            $filePath,
-            $dto->file->get(),
-        );
+        try {
+            $extension = strtolower($dto->file->getClientOriginalExtension());
+            $filePath = $dto->userId.'/'.Str::uuid()->toString().'.'.$extension;
 
-        return $this->imageRepository->create(new StoreImageDto(
-            userId: $dto->userId,
-            originalName: $dto->file->getClientOriginalName(),
-            filePath: $filePath,
-            extension: $extension,
-            size: $dto->file->getSize(),
-        ));
+            $this->storageRepository->store(
+                $filePath,
+                $dto->file->get(),
+            );
+
+            return $this->imageRepository->create(new StoreImageDto(
+                userId: $dto->userId,
+                originalName: $dto->file->getClientOriginalName(),
+                filePath: $filePath,
+                extension: $extension,
+                size: $dto->file->getSize(),
+            ));
+        } catch (Throwable $exception) {
+            $this->uploadLimitService->releaseUploadSlot($dto->userId);
+
+            throw $exception;
+        }
     }
 
     /**
