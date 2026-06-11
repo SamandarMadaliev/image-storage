@@ -1,58 +1,208 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Image Store API
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+REST API for uploading, listing, retrieving, and deleting images. API-only — no web UI.
 
-## About Laravel
+Users authenticate with Laravel Sanctum bearer tokens. Image files are stored in MinIO (S3-compatible storage); metadata is stored in PostgreSQL.
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+## Features
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+- User registration and login (Sanctum token auth)
+- Upload images (PNG and JPEG only, max 5 MB)
+- List, download, and delete your own images
+- Daily upload limit per user (default: 100,000 images/day, tracked in Redis)
+- Auto-generated OpenAPI documentation (Scramble)
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+## Tech stack
 
-## Learning Laravel
+| Component | Technology |
+|-----------|------------|
+| Framework | Laravel 13, PHP 8.3+ |
+| Auth | Laravel Sanctum |
+| Database | PostgreSQL 17 |
+| Cache / queues / rate limits | Redis 8 |
+| Object storage | MinIO (S3 API) |
+| Reverse proxy | Nginx |
+| API docs | [Scramble](https://scramble.dedoc.co/) (OpenAPI 3.1) |
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
+## Prerequisites
 
-In addition, [Laracasts](https://laracasts.com) contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+- [Docker](https://docs.docker.com/get-docker/) and Docker Compose
 
-You can also watch bite-sized lessons with real-world projects on [Laravel Learn](https://laravel.com/learn), where you will be guided through building a Laravel application from scratch while learning PHP fundamentals.
+## Getting started (Docker)
 
-## Agentic Development
-
-Laravel's predictable structure and conventions make it ideal for AI coding agents like Claude Code, Cursor, and GitHub Copilot. Install [Laravel Boost](https://laravel.com/docs/ai) to supercharge your AI workflow:
+### 1. Clone and configure environment
 
 ```bash
-composer require laravel/boost --dev
-
-php artisan boost:install
+git clone <repository-url>
+cd image-store
+cp .env.example .env
 ```
 
-Boost provides your agent 15+ tools and skills that help agents build Laravel applications while following best practices.
+Edit `.env` and set at least these values for Docker:
 
-## Contributing
+```env
+APP_KEY=                          # generated in step 2
+APP_URL=http://localhost
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+DB_CONNECTION=pgsql
+DB_HOST=database
+DB_PORT=5432
+DB_DATABASE=image_storage
+DB_USERNAME=admin
+DB_PASSWORD=your-db-password
 
-## Code of Conduct
+REDIS_HOST=redis
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+FILESYSTEM_DISK=s3
+QUEUE_CONNECTION=redis
 
-## Security Vulnerabilities
+AWS_ACCESS_KEY_ID=your-minio-user
+AWS_SECRET_ACCESS_KEY=your-minio-password
+AWS_BUCKET=images
+AWS_ENDPOINT=http://minio:9000
+AWS_USE_PATH_STYLE_ENDPOINT=true
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+MINIO_ROOT_USER=your-minio-user
+MINIO_ROOT_PASSWORD=your-minio-password
+
+IMAGE_DAILY_UPLOAD_LIMIT=100000
+```
+
+`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` must match `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD`.
+
+### 2. Generate application key
+
+```bash
+docker compose run --rm backend php artisan key:generate
+```
+
+Copy the generated `APP_KEY` into your `.env` if it was not written automatically.
+
+### 3. Start services
+
+```bash
+docker compose up -d --build
+```
+
+This starts:
+
+| Service | Container | Port |
+|---------|-----------|------|
+| API (Nginx) | `nginx_image_store` | 80 |
+| PHP-FPM | `backend_image_store` | — |
+| PostgreSQL | `database_image_store` | 5432 |
+| Redis | `redis_image_store` | 6379 |
+| MinIO | `minio_image_store` | 9000 (API), 9001 (console) |
+
+Migrations run automatically when the backend container starts.
+
+### 4. Create the MinIO bucket
+
+On first run, create the `images` bucket (name must match `AWS_BUCKET`):
+
+```bash
+docker exec minio_image_store mc alias set local http://localhost:9000 your-minio-user your-minio-password
+docker exec minio_image_store mc mb local/images --ignore-existing
+```
+
+### 5. Verify the API
+
+```bash
+curl http://localhost/api
+```
+
+Expected response:
+
+```json
+{"message":"Welcome to the Image Store API. Please login to use this service."}
+```
+
+## API documentation
+
+Interactive Swagger UI (available when `APP_ENV=local`):
+
+- **UI:** http://localhost/docs/api
+- **OpenAPI JSON:** http://localhost/docs/api.json
+
+## API overview
+
+### Public endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api` | Welcome message |
+| `POST` | `/api/register` | Register a new user |
+| `POST` | `/api/login` | Login and receive a token |
+
+### Protected endpoints (Bearer token required)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/logout` | Revoke current token |
+| `GET` | `/api/user` | Get authenticated user |
+| `POST` | `/api/images` | Upload an image |
+| `GET` | `/api/images` | List your images |
+| `GET` | `/api/images/{id}` | Download image by record ID |
+| `DELETE` | `/api/images/{id}` | Delete image by record ID |
+
+`{id}` is the numeric record ID from upload/list responses — not the original file name.
+
+### Quick example
+
+```bash
+# Register
+curl -X POST http://localhost/api/register \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json" \
+  -d '{"name":"John Doe","email":"john@example.com","password":"password123"}'
+
+# Login
+TOKEN=$(curl -s -X POST http://localhost/api/login \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json" \
+  -d '{"email":"john@example.com","password":"password123"}' \
+  | php -r 'echo json_decode(file_get_contents("php://stdin"))->token;')
+
+# Upload
+curl -X POST http://localhost/api/images \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Accept: application/json" \
+  -F "image=@/path/to/photo.png"
+
+# List images
+curl http://localhost/api/images \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Accept: application/json"
+```
+
+## Running commands
+
+All Artisan and Composer commands should be run inside the backend container:
+
+```bash
+docker compose exec backend php artisan migrate
+docker compose exec backend php artisan test
+docker compose exec backend ./vendor/bin/pint
+```
+
+## Running tests
+
+```bash
+docker compose exec backend php artisan test
+```
+
+## Project structure
+
+```
+app/
+├── DTOs/           # Data transfer objects
+├── Http/
+│   ├── Controllers/
+│   └── Requests/   # Form request validation
+├── Repositories/   # Database and storage access
+└── Services/       # Business logic
+```
 
 ## License
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+MIT
