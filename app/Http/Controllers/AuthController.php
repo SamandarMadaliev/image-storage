@@ -17,6 +17,11 @@ class AuthController extends Controller
         private AuthService $authService,
     ) {}
 
+    /**
+     * Register a new user account.
+     *
+     * Returns a Sanctum API token to use for authenticated requests.
+     */
     public function register(RegisterRequest $request): JsonResponse
     {
         $result = $this->authService->register(
@@ -26,6 +31,11 @@ class AuthController extends Controller
         return response()->json($result->toArray(), Response::HTTP_CREATED);
     }
 
+    /**
+     * Login with email and password.
+     *
+     * Returns a Sanctum API token to use for authenticated requests.
+     */
     public function login(LoginRequest $request): JsonResponse
     {
         $result = $this->authService->login(
@@ -35,6 +45,9 @@ class AuthController extends Controller
         return response()->json($result->toArray());
     }
 
+    /**
+     * Logout and revoke the current API token.
+     */
     public function logout(Request $request): JsonResponse
     {
         $this->authService->logout($request->user());
@@ -44,6 +57,9 @@ class AuthController extends Controller
         ]);
     }
 
+    /**
+     * Get the authenticated user profile.
+     */
     public function user(Request $request): JsonResponse
     {
         return response()->json([

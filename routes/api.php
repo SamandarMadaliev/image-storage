@@ -4,11 +4,14 @@ use App\Http\Controllers\AuthController;
 use App\Http\Controllers\ImageController;
 use Illuminate\Support\Facades\Route;
 
-Route::get('/', function () {
-    return response()->json([
-        'message' => 'Welcome to the Image Store API. Please login to use this service.',
-    ]);
-});
+Route::get('/', /**
+ * Welcome to the Image Store API.
+ */
+    function () {
+        return response()->json([
+            'message' => 'Welcome to the Image Store API. Please login to use this service.',
+        ]);
+    });
 
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
